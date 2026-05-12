@@ -12,6 +12,8 @@
 #include "vtkPointData.h"
 #include "vtkStreamingDemandDrivenPipeline.h"
 
+#include "SZ3Multi/SZ3VersionDispatcher.h"
+
 #include <iostream>
 
 vtkStandardNewMacro(vtkSZ3Reader);
@@ -78,16 +80,22 @@ int vtkSZ3Reader::RequestData(
   file.read(compressedBuffer.data(), compressedSize);
   file.close();
 
-  auto conf = SZ3::Config(DomainDimensions[0], DomainDimensions[1], DomainDimensions[2]);
+  // Read and display version info
+  uint32_t version = SZ3_ReadVersion(compressedBuffer.data(), compressedBuffer.size());
+  if (version == 0) {
+    vtkErrorMacro("Failed to read SZ3 version: " << SZ3_GetLastError());
+    return 0;
+  }
+  std::cout << "SZ3 compressed file version: " << SZ3_VersionToString(version) << std::endl;
 
   vtkImageData* output = vtkImageData::GetData(outputVector);
   output->SetDimensions(this->DomainDimensions);
-  
+
   if (this->UseDoublePrecision) {
-    this->Decompress<double>(output, conf, compressedBuffer);
+    this->Decompress<double>(output, compressedBuffer);
   }
   else {
-    this->Decompress<float>(output, conf, compressedBuffer);
+    this->Decompress<float>(output, compressedBuffer);
   }
 
   return 1;
@@ -95,24 +103,34 @@ int vtkSZ3Reader::RequestData(
 
 template <typename T>
 void vtkSZ3Reader::Decompress(
-  vtkImageData* output, SZ3::Config& conf, std::vector<char>& compressedBuffer)
+  vtkImageData* output, std::vector<char>& compressedBuffer)
 {
   using VtkArrayT = vtkAOSDataArrayTemplate<T>;
   vtkNew<VtkArrayT> dataArray;
 
+  size_t num = static_cast<size_t>(DomainDimensions[0]) *
+               static_cast<size_t>(DomainDimensions[1]) *
+               static_cast<size_t>(DomainDimensions[2]);
+
   dataArray->SetNumberOfComponents(1);
-  dataArray->SetNumberOfTuples(conf.num);
+  dataArray->SetNumberOfTuples(num);
   dataArray->SetName("scalar");
 
   // Decompress directly into the VTK array's buffer
   T* decompressedPtr = static_cast<T*>(dataArray->GetVoidPointer(0));
+  int dims[3] = {DomainDimensions[0], DomainDimensions[1], DomainDimensions[2]};
 
-  try {
-    SZ_decompress<T>(
-      conf, reinterpret_cast<const char*>(compressedBuffer.data()), compressedBuffer.size(), decompressedPtr);
+  int result;
+  if constexpr (std::is_same_v<T, float>) {
+    result = SZ3_DecompressFloat(compressedBuffer.data(), compressedBuffer.size(),
+                                  decompressedPtr, num, dims);
+  } else {
+    result = SZ3_DecompressDouble(compressedBuffer.data(), compressedBuffer.size(),
+                                   decompressedPtr, num, dims);
   }
-  catch (std::exception& e) {
-    vtkErrorMacro("Decompression failed: " << e.what());
+
+  if (result != 0) {
+    vtkErrorMacro("Decompression failed: " << SZ3_GetLastError());
     return;
   }
 

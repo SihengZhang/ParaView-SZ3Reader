@@ -2,11 +2,10 @@
 #define vtkSZ3Reader_h
 
 #include "vtkSZ3ReaderModule.h" // for export macro
-#include "vtkDataObjectAlgorithm.h"
 #include "vtkImageAlgorithm.h"
 
-#include <SZ3/api/sz.hpp>
 #include <string>
+#include <vector>
 
 class VTKSZ3READER_EXPORT vtkSZ3Reader : public vtkImageAlgorithm
 {
@@ -39,7 +38,7 @@ private:
   void operator=(const vtkSZ3Reader&);
 
   template <typename T>
-  void Decompress(vtkImageData* output, SZ3::Config& conf, std::vector<char>& compressedBuffer);
+  void Decompress(vtkImageData* output, std::vector<char>& compressedBuffer);
 };
 
 #endif
