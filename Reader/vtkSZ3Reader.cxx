@@ -12,9 +12,11 @@
 #include "vtkPointData.h"
 #include "vtkStreamingDemandDrivenPipeline.h"
 
-#include "SZ3Multi/SZ3VersionDispatcher.h"
+#include "sz3_compat/sz3_compat.hpp"
 
+#include <cstring>
 #include <iostream>
+#include <stdexcept>
 
 vtkStandardNewMacro(vtkSZ3Reader);
 
@@ -80,14 +82,6 @@ int vtkSZ3Reader::RequestData(
   file.read(compressedBuffer.data(), compressedSize);
   file.close();
 
-  // Read and display version info
-  uint32_t version = SZ3_ReadVersion(compressedBuffer.data(), compressedBuffer.size());
-  if (version == 0) {
-    vtkErrorMacro("Failed to read SZ3 version: " << SZ3_GetLastError());
-    return 0;
-  }
-  std::cout << "SZ3 compressed file version: " << SZ3_VersionToString(version) << std::endl;
-
   vtkImageData* output = vtkImageData::GetData(outputVector);
   output->SetDimensions(this->DomainDimensions);
 
@@ -116,21 +110,26 @@ void vtkSZ3Reader::Decompress(
   dataArray->SetNumberOfTuples(num);
   dataArray->SetName("scalar");
 
-  // Decompress directly into the VTK array's buffer
-  T* decompressedPtr = static_cast<T*>(dataArray->GetVoidPointer(0));
-  int dims[3] = {DomainDimensions[0], DomainDimensions[1], DomainDimensions[2]};
+  std::vector<size_t> dims = {
+    static_cast<size_t>(DomainDimensions[0]),
+    static_cast<size_t>(DomainDimensions[1]),
+    static_cast<size_t>(DomainDimensions[2])
+  };
 
-  int result;
-  if constexpr (std::is_same_v<T, float>) {
-    result = SZ3_DecompressFloat(compressedBuffer.data(), compressedBuffer.size(),
-                                  decompressedPtr, num, dims);
-  } else {
-    result = SZ3_DecompressDouble(compressedBuffer.data(), compressedBuffer.size(),
-                                   decompressedPtr, num, dims);
-  }
+  try {
+    T* decompressedData = SZ3Compat::SZ3Compat_decompress<T>(
+      compressedBuffer.data(),
+      compressedBuffer.size(),
+      dims
+    );
 
-  if (result != 0) {
-    vtkErrorMacro("Decompression failed: " << SZ3_GetLastError());
+    T* vtkPtr = static_cast<T*>(dataArray->GetVoidPointer(0));
+    std::memcpy(vtkPtr, decompressedData, num * sizeof(T));
+
+    delete[] decompressedData;
+
+  } catch (const std::runtime_error& e) {
+    vtkErrorMacro("Decompression failed: " << e.what());
     return;
   }
 

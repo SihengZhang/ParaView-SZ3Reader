@@ -2,18 +2,19 @@
 
 ParaView/VTK reader for direct visualization of data files compressed using the SZ3 compressor.
 
-Version: 0.2
+Version: 0.3
 
 ## Features
 
 - Read `.sz3` compressed files directly in ParaView
-- Multi-version SZ3 support (automatically decompresses files from different SZ3 versions)
+- Multi-version SZ3 support with dynamic plugin loading
+- Automatic version detection from compressed file header
 - Supports both single (float32) and double (float64) precision
 - Automatically fetches and builds SZ3 dependencies
 
 ## Supported SZ3 Versions
 
-Supported: 3.3.2, 3.3.0
+Supported: 3.0.2, 3.1.7, 3.2.0, 3.2.1, 3.3.0, 3.3.2
 
 ## Build Instructions
 
@@ -70,9 +71,18 @@ cmake --build . --target SZ3Reader
 4. Check "Double Precision" if the data was compressed as float64
 5. Click Apply
 
+## Architecture
+
+The plugin uses dynamic plugin loading (dlopen) to support multiple SZ3 versions:
+
+- **SZ3Compat dispatcher**: Detects version from compressed file header and loads the appropriate plugin
+- **Version plugins**: Separate shared libraries for each SZ3 version (libsz3_v302.so, libsz3_v317.so, etc.)
+- **Automatic version detection**: Files compressed with SZ3 v3.2.0+ contain version info in header; older versions are detected by analyzing the data structure
+
 ## References
 
 - SZ3 Compressor: https://szcompressor.org/ | https://github.com/szcompressor/SZ3
+- SZ3-multi-version: https://github.com/SihengZhang/SZ3-multi-version
 - ParaView: https://www.paraview.org/
 
 ## Contact
